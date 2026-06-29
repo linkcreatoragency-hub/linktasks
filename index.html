@@ -347,6 +347,7 @@ $("#addMemberBtn").onclick=()=>{
 
 /* ---------- main app ---------- */
 function startApp(){
+  $("#onboard").classList.add("hidden");
   $("#myName").textContent=me;
   $("#myAvatar").textContent=initials(me);
   $("#myAvatar").style.background=colorFor(me);
