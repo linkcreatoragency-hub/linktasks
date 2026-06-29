@@ -149,6 +149,50 @@
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:90px;z-index:80;
     background:var(--surface-2);border:1px solid var(--border);color:var(--text);
     padding:11px 18px;border-radius:30px;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+
+  /* ===== Manager button + panel ===== */
+  .mgrbtn{font-size:12px;font-weight:700;padding:6px 11px;border-radius:20px;border:1px solid var(--primary);
+    color:#fff;background:var(--primary-d);white-space:nowrap}
+  .avatar.mini{width:20px;height:20px;font-size:10px}
+  .mgr-overlay{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+  .mgr-sheet{background:var(--bg);width:100%;max-width:760px;max-height:94vh;overflow-y:auto;
+    border-radius:22px 22px 0 0;padding:0 16px calc(env(safe-area-inset-bottom) + 24px);animation:rise .22s ease}
+  .mgr-top{position:sticky;top:0;background:var(--bg);display:flex;align-items:center;justify-content:space-between;
+    padding:18px 2px 12px;border-bottom:1px solid var(--border);z-index:2}
+  .mgr-top h3{margin:0;font-size:18px}
+  .mgr-close{font-size:16px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);
+    width:34px;height:34px;border-radius:10px}
+  #mgrBody h4{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:20px 2px 10px}
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+  .mgr-table{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
+  .mgr-table th{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:9px 6px;border-bottom:1px solid var(--border)}
+  .mgr-table th:first-child{text-align:left;padding-left:12px}
+  .mgr-table td{text-align:center;padding:9px 6px;border-bottom:1px solid var(--border)}
+  .mgr-table td.mname{text-align:left;padding-left:12px;font-weight:600;white-space:nowrap}
+  .mgr-table td.mname .avatar{display:inline-flex;vertical-align:middle;margin-right:7px}
+  .mgr-table td.od{color:#fca5a5;font-weight:700}
+  .mgr-table tr:last-child td{border-bottom:none}
+  .badge-mgr{font-size:9px;font-weight:800;background:var(--primary-d);color:#fff;padding:1px 6px;border-radius:10px;margin-left:6px}
+  .att-head{font-size:12px;font-weight:700;margin:12px 2px 7px}
+  .att-head.od-h{color:#fca5a5}.att-head.soon-h{color:#fcd34d}
+  .att{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);
+    border-radius:11px;padding:10px 12px;margin-bottom:7px;cursor:pointer}
+  .att-t{flex:1;font-size:13px;font-weight:600;word-break:break-word}
+  .att-m{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);white-space:nowrap}
+  .att-d{font-size:11px;font-weight:700;white-space:nowrap}
+  .att-d.over,.att-d.od{color:#fca5a5}.att-d.soon{color:#fcd34d}
+  .muted-row{color:var(--muted);font-size:13px;padding:8px 2px}
+  .hint{color:var(--muted);font-size:12px;margin:8px 2px 0}
+  .memlist{display:flex;flex-direction:column;gap:8px}
+  .mrow{display:flex;align-items:center;justify-content:space-between;background:var(--surface);
+    border:1px solid var(--border);border-radius:11px;padding:9px 12px}
+  .mrow-n{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+  .mrm{font-size:12px;font-weight:700;color:#fca5a5;background:rgba(239,68,68,.12);
+    border:1px solid rgba(239,68,68,.35);padding:6px 12px;border-radius:9px}
+  .muted-s{color:var(--muted)}
+  .addrow{display:flex;gap:8px;margin-top:12px}
+  .addrow input{flex:1;background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:11px;padding:12px}
+  .addrow .btn{flex:0 0 auto;padding:12px 20px}
 </style>
 </head>
 <body>
@@ -171,6 +215,7 @@
   <div class="logo">L</div>
   <h1>LinkTasks<small id="teamSub">Link Building Agency</small></h1>
   <span class="syncpill" id="syncPill">…</span>
+  <button class="mgrbtn hidden" id="mgrBtn" title="Manager Panel">⚙ Manager</button>
   <div class="whoami" id="whoami" title="Switch user">
     <span class="avatar" id="myAvatar"></span>
     <span id="myName"></span>
@@ -238,6 +283,14 @@
   </div>
 </div>
 
+<!-- ===== Manager Panel (Robin only) ===== -->
+<div class="mgr-overlay hidden" id="mgrPanel">
+  <div class="mgr-sheet">
+    <div class="mgr-top"><h3>⚙ Manager Panel</h3><button class="mgr-close" id="mgrClose">✕</button></div>
+    <div id="mgrBody"></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* =================================================================
@@ -249,6 +302,7 @@ const SUPABASE_URL  = "https://fxbibgfdkyutlhrvirkq.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_4civuymPQJjNy8W_cUF5XQ_qAo4YpDd";
 
 const DEFAULT_TEAM = ["Robin","Shafaat Rahman","Rishat Rahman","Abdullah","Shakil","Mutman","Anhar","Mahmudul","Shumon","Ontor"];
+const MANAGER = "Robin"; // Task Manager — sees the Manager Panel
 const STATUSES = [
   {key:"todo",     label:"To-Do",       color:"#3b82f6"},
   {key:"progress", label:"In Progress", color:"#f59e0b"},
@@ -261,6 +315,7 @@ const AV_COLORS=["#6366f1","#ec4899","#22c55e","#f59e0b","#06b6d4","#a855f7","#e
 let sb=null, cloud=false;
 let tasks=[];
 let team=[];
+let members=[];
 let me=localStorage.getItem("lt_me")||"";
 let filterAssignee="all";
 let view="board";
@@ -283,6 +338,7 @@ function dueLabel(d){const n=daysUntil(d);if(n===null)return null;
 /* ---------- persistence ---------- */
 function loadLocal(){
   team=JSON.parse(localStorage.getItem("lt_team")||"null")||DEFAULT_TEAM.slice();
+  members=team.map(n=>({id:n,name:n}));
   tasks=JSON.parse(localStorage.getItem("lt_tasks")||"[]");
 }
 function saveLocal(){
@@ -298,11 +354,13 @@ async function init(){
       if(error)throw error;
       cloud=true;
       tasks=data.map(fromRow);
-      team=JSON.parse(localStorage.getItem("lt_team")||"null")||DEFAULT_TEAM.slice();
+      await loadMembers();
       // realtime updates
       sb.channel("tasks-rt").on("postgres_changes",{event:"*",schema:"public",table:"tasks"},
         async()=>{const {data}=await sb.from("tasks").select("*").order("created_at",{ascending:false});
-          if(data){tasks=data.map(fromRow);render();}}).subscribe();
+          if(data){tasks=data.map(fromRow);render();if(managerOpen)renderManager();}}).subscribe();
+      sb.channel("members-rt").on("postgres_changes",{event:"*",schema:"public",table:"members"},
+        async()=>{await loadMembers();buildAssigneeChips();render();if(managerOpen)renderManager();}).subscribe();
     }catch(e){console.warn("Supabase failed, using local mode:",e);cloud=false;loadLocal();}
   }else{
     loadLocal();
@@ -330,6 +388,92 @@ function setSyncPill(){
   else{p.textContent="● On this device";p.className="syncpill local";}
 }
 
+/* ---------- members + manager panel ---------- */
+async function loadMembers(){
+  if(cloud){
+    try{
+      const {data,error}=await sb.from("members").select("*").order("created_at",{ascending:true});
+      if(error)throw error;
+      members=(data&&data.length)?data:DEFAULT_TEAM.map(n=>({id:"seed_"+n,name:n}));
+    }catch(e){members=DEFAULT_TEAM.map(n=>({id:"seed_"+n,name:n}));}
+  }else{
+    const local=JSON.parse(localStorage.getItem("lt_team")||"null");
+    members=(local||DEFAULT_TEAM).map(n=>({id:n,name:n}));
+  }
+  team=members.map(m=>m.name);
+}
+
+let managerOpen=false;
+function openManager(){managerOpen=true;renderManager();$("#mgrPanel").classList.remove("hidden");}
+function closeManager(){managerOpen=false;$("#mgrPanel").classList.add("hidden");}
+
+function statsFor(name){
+  const t=tasks.filter(x=>x.assignee===name);
+  const by=s=>t.filter(x=>x.status===s).length;
+  const overdue=t.filter(x=>x.due&&x.status!=="done"&&daysUntil(x.due)<0).length;
+  const done=by("done"),total=t.length;
+  return {total,todo:by("todo"),progress:by("progress"),review:by("review"),done,overdue,comp:total?Math.round(done/total*100):0};
+}
+
+async function addMember(){
+  const inp=$("#newMgrMember");if(!inp)return;
+  const name=inp.value.trim();if(!name)return;
+  if(team.includes(name)){toast("Already on the team");return;}
+  const m={id:uid(),name};
+  if(cloud){try{const {error}=await sb.from("members").insert({id:m.id,name:m.name});if(error)throw error;}catch(e){toast("Couldn't add (sync error)");return;}}
+  members.push(m);team=members.map(x=>x.name);
+  if(!cloud)localStorage.setItem("lt_team",JSON.stringify(team));
+  inp.value="";buildAssigneeChips();renderManager();render();toast("Added "+name);
+}
+async function removeMember(id){
+  const m=members.find(x=>x.id===id);if(!m)return;
+  if(m.name===MANAGER){toast("Can't remove the manager");return;}
+  if(cloud){try{const {error}=await sb.from("members").delete().eq("id",id);if(error)throw error;}catch(e){toast("Couldn't remove (sync error)");return;}}
+  members=members.filter(x=>x.id!==id);team=members.map(x=>x.name);
+  if(!cloud)localStorage.setItem("lt_team",JSON.stringify(team));
+  buildAssigneeChips();renderManager();render();toast("Removed "+m.name);
+}
+
+function renderManager(){
+  const body=$("#mgrBody");if(!body)return;
+  const rows=team.map(n=>{const s=statsFor(n);return `<tr>
+    <td class="mname"><span class="avatar mini" style="background:${colorFor(n)}">${initials(n)}</span>${esc(n)}${n===MANAGER?'<span class="badge-mgr">Mgr</span>':''}</td>
+    <td>${s.todo}</td><td>${s.progress}</td><td>${s.review}</td><td>${s.done}</td>
+    <td class="${s.overdue?'od':''}">${s.overdue}</td><td><b>${s.total}</b></td><td>${s.comp}%</td></tr>`;}).join("");
+  const open=tasks.filter(t=>t.status!=="done"&&t.due);
+  const overdue=open.filter(t=>daysUntil(t.due)<0).sort((a,b)=>(a.due||"").localeCompare(b.due||""));
+  const soon=open.filter(t=>daysUntil(t.due)>=0&&daysUntil(t.due)<=3).sort((a,b)=>(a.due||"").localeCompare(b.due||""));
+  const item=t=>{const dl=dueLabel(t.due);return `<div class="att" data-id="${t.id}">
+    <span class="att-t">${esc(t.title)}</span>
+    <span class="att-m"><span class="avatar mini" style="background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}</span>
+    <span class="att-d ${dl.cls}">${dl.txt}</span></div>`;};
+  const memList=members.map(m=>`<div class="mrow">
+    <span class="mrow-n"><span class="avatar mini" style="background:${colorFor(m.name)}">${initials(m.name)}</span>${esc(m.name)}${m.name===MANAGER?'<span class="badge-mgr">Mgr</span>':''}</span>
+    ${m.name===MANAGER?'<span class="muted-s">—</span>':`<button class="mrm" data-id="${m.id}">Remove</button>`}</div>`).join("");
+  body.innerHTML=`
+    <h4>Team overview</h4>
+    <div class="tablewrap"><table class="mgr-table">
+      <thead><tr><th>Member</th><th>To-Do</th><th>Prog</th><th>Rev</th><th>Done</th><th>Over</th><th>Total</th><th>%</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <h4>Needs attention</h4>
+    <div class="att-head od-h">Overdue · ${overdue.length}</div>
+    ${overdue.length?overdue.map(item).join(""):'<div class="muted-row">Nothing overdue 🎉</div>'}
+    <div class="att-head soon-h">Due soon (≤3 days) · ${soon.length}</div>
+    ${soon.length?soon.map(item).join(""):'<div class="muted-row">Nothing due soon</div>'}
+    <p class="hint">Tip: tap any task above to reassign, edit, or delete it.</p>
+    <h4>Manage team</h4>
+    <div class="memlist">${memList}</div>
+    <div class="addrow"><input id="newMgrMember" placeholder="Add a team member" autocomplete="off"><button class="btn primary" id="mgrAddBtn">Add</button></div>`;
+  body.querySelectorAll(".att").forEach(el=>el.onclick=()=>{const t=tasks.find(x=>x.id===el.dataset.id);if(t){closeManager();openEditor(t);}});
+  body.querySelectorAll(".mrm").forEach(b=>b.onclick=()=>removeMember(b.dataset.id));
+  const ab=$("#mgrAddBtn");if(ab)ab.onclick=addMember;
+  const ni=$("#newMgrMember");if(ni)ni.addEventListener("keydown",e=>{if(e.key==="Enter")addMember();});
+}
+
+$("#mgrBtn").onclick=openManager;
+$("#mgrClose").onclick=closeManager;
+$("#mgrPanel").onclick=e=>{if(e.target===$("#mgrPanel"))closeManager();};
+
 /* ---------- onboarding ---------- */
 function showOnboard(){
   $("#onboard").classList.remove("hidden");
@@ -351,6 +495,7 @@ function startApp(){
   $("#myName").textContent=me;
   $("#myAvatar").textContent=initials(me);
   $("#myAvatar").style.background=colorFor(me);
+  $("#mgrBtn").classList.toggle("hidden", me!==MANAGER);
   buildAssigneeChips();
   render();
   requestNotify();
