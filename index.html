@@ -146,6 +146,7 @@
   .onboard p{color:var(--muted);margin:0 0 26px;font-size:14px;line-height:1.5}
   .team-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
   .team-grid .pick{padding:14px;font-size:15px}
+  .login-err{color:#fca5a5;font-size:13px;min-height:18px;margin-bottom:10px;font-weight:600}
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:90px;z-index:80;
     background:var(--surface-2);border:1px solid var(--border);color:var(--text);
     padding:11px 18px;border-radius:30px;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.4)}
@@ -208,6 +209,23 @@
     <input id="newMemberInput" placeholder="Type your name and press Add">
   </div>
   <button class="btn primary" id="addMemberBtn">Add me to the team</button>
+</div>
+
+<!-- ===== Login (cloud) ===== -->
+<div class="onboard hidden" id="login">
+  <div class="logo-lg">L</div>
+  <h2>LinkTasks</h2>
+  <p>Sign in to your team account.</p>
+  <div class="field" style="text-align:left">
+    <label>User ID</label>
+    <input id="loginUser" placeholder="e.g. robin" autocapitalize="none" autocomplete="username" autocorrect="off">
+  </div>
+  <div class="field" style="text-align:left">
+    <label>Password</label>
+    <input id="loginPass" type="password" placeholder="Your password" autocomplete="current-password">
+  </div>
+  <div id="loginErr" class="login-err"></div>
+  <button class="btn primary" id="loginBtn">Sign in</button>
 </div>
 
 <!-- ===== App bar ===== -->
@@ -348,26 +366,59 @@ function saveLocal(){
 
 async function init(){
   if(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase){
-    try{
-      sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-      const {data,error}=await sb.from("tasks").select("*").order("created_at",{ascending:false});
-      if(error)throw error;
-      cloud=true;
-      tasks=data.map(fromRow);
-      await loadMembers();
-      // realtime updates
-      sb.channel("tasks-rt").on("postgres_changes",{event:"*",schema:"public",table:"tasks"},
-        async()=>{const {data}=await sb.from("tasks").select("*").order("created_at",{ascending:false});
-          if(data){tasks=data.map(fromRow);render();if(managerOpen)renderManager();}}).subscribe();
-      sb.channel("members-rt").on("postgres_changes",{event:"*",schema:"public",table:"members"},
-        async()=>{await loadMembers();buildAssigneeChips();render();if(managerOpen)renderManager();}).subscribe();
-    }catch(e){console.warn("Supabase failed, using local mode:",e);cloud=false;loadLocal();}
+    sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+    cloud=true; setSyncPill();
+    let session=null;
+    try{ const r=await sb.auth.getSession(); session=r.data.session; }catch(e){}
+    if(session && session.user){ await afterLogin(session.user); }
+    else { showLogin(); }
   }else{
-    loadLocal();
+    cloud=false; setSyncPill(); loadLocal();
+    if(!me){showOnboard();}else{startApp();}
   }
-  setSyncPill();
-  if(!me){showOnboard();}else{startApp();}
 }
+
+async function loadData(){
+  try{
+    const {data,error}=await sb.from("tasks").select("*").order("created_at",{ascending:false});
+    if(error)throw error;
+    tasks=data.map(fromRow);
+  }catch(e){tasks=[];}
+  await loadMembers();
+  if(!window.__rt){
+    window.__rt=true;
+    sb.channel("tasks-rt").on("postgres_changes",{event:"*",schema:"public",table:"tasks"},
+      async()=>{const {data}=await sb.from("tasks").select("*").order("created_at",{ascending:false});
+        if(data){tasks=data.map(fromRow);render();if(managerOpen)renderManager();}}).subscribe();
+    sb.channel("members-rt").on("postgres_changes",{event:"*",schema:"public",table:"members"},
+      async()=>{await loadMembers();buildAssigneeChips();render();if(managerOpen)renderManager();}).subscribe();
+  }
+}
+
+async function afterLogin(user){
+  me=(user.user_metadata && user.user_metadata.name) || user.email;
+  await loadData();
+  startApp();
+}
+
+function showLogin(){ $("#login").classList.remove("hidden"); }
+function loginErr(m){ $("#loginErr").textContent=m||""; }
+async function doLogin(){
+  const u=($("#loginUser").value||"").trim().toLowerCase();
+  const p=$("#loginPass").value||"";
+  if(!u||!p){loginErr("Enter your User ID and password");return;}
+  loginErr(""); const btn=$("#loginBtn"); btn.disabled=true; btn.textContent="Signing in…";
+  let res;
+  try{ res=await sb.auth.signInWithPassword({email:u+"@linktasks.app",password:p}); }
+  catch(e){ res={error:e}; }
+  btn.disabled=false; btn.textContent="Sign in";
+  if(!res||res.error){loginErr("Wrong User ID or password. Check and try again.");return;}
+  $("#login").classList.add("hidden"); $("#loginPass").value="";
+  await afterLogin(res.data.user);
+}
+$("#loginBtn").onclick=doLogin;
+$("#loginPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
+$("#loginUser").addEventListener("keydown",e=>{if(e.key==="Enter")$("#loginPass").focus();});
 function fromRow(r){return{id:r.id,title:r.title,desc:r.description,assignee:r.assignee,
   priority:r.priority,due:r.due_date,status:r.status,created_at:r.created_at};}
 function toRow(t){return{id:t.id,title:t.title,description:t.desc,assignee:t.assignee,
@@ -492,6 +543,7 @@ $("#addMemberBtn").onclick=()=>{
 /* ---------- main app ---------- */
 function startApp(){
   $("#onboard").classList.add("hidden");
+  $("#login").classList.add("hidden");
   $("#myName").textContent=me;
   $("#myAvatar").textContent=initials(me);
   $("#myAvatar").style.background=colorFor(me);
@@ -501,7 +553,10 @@ function startApp(){
   requestNotify();
 }
 
-$("#whoami").onclick=()=>{localStorage.removeItem("lt_me");me="";location.reload();};
+$("#whoami").onclick=async()=>{
+  if(cloud&&sb){try{await sb.auth.signOut();}catch(e){}}
+  localStorage.removeItem("lt_me");me="";location.reload();
+};
 
 function buildAssigneeChips(){
   const wrap=$("#assigneeChips");wrap.innerHTML="";
