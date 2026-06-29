@@ -92,6 +92,7 @@
   .tag.prio-high{background:rgba(239,68,68,.15);color:#fca5a5}
   .tag.prio-med{background:rgba(245,158,11,.15);color:#fcd34d}
   .tag.prio-low{background:rgba(59,130,246,.15);color:#93c5fd}
+  .tag.cat{font-weight:700}
   .tag.due{background:var(--surface-2);color:var(--muted)}
   .tag.due.soon{color:#fcd34d}
   .tag.due.over{background:rgba(239,68,68,.15);color:#fca5a5}
@@ -276,6 +277,16 @@
       <textarea id="fNote" placeholder="Anchor text, contact, instructions…"></textarea>
     </div>
     <div class="field">
+      <label>Category</label>
+      <select id="fCategory">
+        <option value="">No category</option>
+        <option value="Foundational Link">Foundational Link</option>
+        <option value="Wiki &amp; Redirect">Wiki &amp; Redirect</option>
+        <option value="Premium Guest Posts &amp; Link Insertion">Premium Guest Posts &amp; Link Insertion</option>
+        <option value="Internal Guest Posts">Internal Guest Posts</option>
+      </select>
+    </div>
+    <div class="field">
       <label>Assign to</label>
       <div class="assign-pick" id="fAssign"></div>
     </div>
@@ -339,6 +350,9 @@ const STATUSES = [
   {key:"done",     label:"Done",        color:"#22c55e"},
 ];
 const AV_COLORS=["#6366f1","#ec4899","#22c55e","#f59e0b","#06b6d4","#a855f7","#ef4444","#14b8a6"];
+const CATEGORIES=["Foundational Link","Wiki & Redirect","Premium Guest Posts & Link Insertion","Internal Guest Posts"];
+const CAT_COLORS={"Foundational Link":"#3b82f6","Wiki & Redirect":"#06b6d4","Premium Guest Posts & Link Insertion":"#a855f7","Internal Guest Posts":"#22c55e"};
+const catColor=c=>CAT_COLORS[c]||"#9aa0b0";
 
 /* ---------- state ---------- */
 let sb=null, cloud=false;
@@ -430,9 +444,9 @@ async function doLogin(){
 $("#loginBtn").onclick=doLogin;
 $("#loginPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
 $("#loginUser").addEventListener("keydown",e=>{if(e.key==="Enter")$("#loginPass").focus();});
-function fromRow(r){return{id:r.id,title:r.title,website:r.website_url,keywords:r.keywords,note:r.note,assignee:r.assignee,
+function fromRow(r){return{id:r.id,title:r.title,website:r.website_url,keywords:r.keywords,note:r.note,category:r.category,assignee:r.assignee,
   priority:r.priority,due:r.due_date,status:r.status,created_at:r.created_at};}
-function toRow(t){return{id:t.id,title:t.title,website_url:t.website||null,keywords:t.keywords||null,note:t.note||null,assignee:t.assignee,
+function toRow(t){return{id:t.id,title:t.title,website_url:t.website||null,keywords:t.keywords||null,note:t.note||null,category:t.category||null,assignee:t.assignee,
   priority:t.priority,due_date:t.due||null,status:t.status};}
 
 async function persist(task,action){
@@ -638,6 +652,7 @@ function taskCard(t){
     ${t.keywords?`<p class="tkw">🔑 ${esc(t.keywords)}</p>`:""}
     ${t.note?`<p class="desc">${esc(t.note)}</p>`:""}
     <div class="meta">
+      ${t.category?`<span class="tag cat" style="color:${catColor(t.category)};border:1px solid ${catColor(t.category)}66;background:${catColor(t.category)}1a">${esc(t.category)}</span>`:""}
       <span class="tag assignee"><span class="avatar" style="width:18px;height:18px;font-size:10px;background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}</span>
       <span class="tag ${pm[0]}">${pm[1]}</span>
       ${dl?`<span class="tag due ${dl.cls}">⏰ ${dl.txt}</span>`:""}
@@ -668,6 +683,7 @@ function openEditor(task){
   $("#fWebsite").value=task?(task.website||""):"";
   $("#fKeywords").value=task?(task.keywords||""):"";
   $("#fNote").value=task?(task.note||""):"";
+  $("#fCategory").value=task?(task.category||""):"";
   $("#fDue").value=task?(task.due||""):"";
   $("#fStatus").value=task?task.status:"todo";
   pickedPrio=task?task.priority:"med";
@@ -698,7 +714,7 @@ $("#saveBtn").onclick=()=>{
   let t;
   if(editingId){t=tasks.find(x=>x.id===editingId);}
   if(!t){t={id:uid(),created_at:new Date().toISOString()};tasks.unshift(t);}
-  t.title=title;t.website=$("#fWebsite").value.trim();t.keywords=$("#fKeywords").value.trim();t.note=$("#fNote").value.trim();t.assignee=pickedAssignee;
+  t.title=title;t.website=$("#fWebsite").value.trim();t.keywords=$("#fKeywords").value.trim();t.note=$("#fNote").value.trim();t.category=$("#fCategory").value;t.assignee=pickedAssignee;
   t.priority=pickedPrio;t.due=$("#fDue").value||null;t.status=$("#fStatus").value;
   persist(t,"update");closeSheet();render();toast(editingId?"Task updated":"Task created");
 };
