@@ -162,7 +162,7 @@
   .mgrbtn{font-size:12px;font-weight:700;padding:6px 11px;border-radius:20px;border:1px solid var(--primary);
     color:#fff;background:var(--primary-d);white-space:nowrap}
   .chatbtn{font-size:16px;background:var(--surface-2);border:1px solid var(--border);width:34px;height:34px;border-radius:10px;position:relative;flex:0 0 auto}
-  .chatbtn .dot{position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:var(--red);border:2px solid var(--surface)}
+  .chatbtn .dot{position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--red);color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid var(--surface)}
   .chat-overlay{position:fixed;inset:0;z-index:56;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
   .chat-sheet{background:var(--bg);width:100%;max-width:760px;height:92vh;display:flex;flex-direction:column;
     border-radius:22px 22px 0 0;overflow:hidden;animation:rise .22s ease}
@@ -173,6 +173,7 @@
   .chat-tab{white-space:nowrap;font-size:13px;padding:7px 13px;border-radius:20px;background:var(--surface);
     border:1px solid var(--border);color:var(--muted);font-weight:600}
   .chat-tab.active{background:var(--primary-d);color:#fff;border-color:var(--primary-d)}
+  .ch-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font-size:10px;font-weight:800;margin-left:5px;vertical-align:middle}
   .chat-msgs{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:9px}
   .msg{max-width:80%;padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.4;word-break:break-word}
   .msg .who{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px}
@@ -638,7 +639,7 @@ $("#mgrClose").onclick=closeManager;
 $("#mgrPanel").onclick=e=>{if(e.target===$("#mgrPanel"))closeManager();};
 
 /* ---------- team chat ---------- */
-let chatOpen=false, chatChannel="general", chatUnread=false, shownMsgIds=new Set();
+let chatOpen=false, chatChannel="general", shownMsgIds=new Set(), unread={}, _audioCtx=null;
 const CHANNEL_SHORT={"Foundational Link":"Foundational","Wiki & Redirect":"Wiki","Premium Guest Posts & Link Insertion":"Premium","Internal Guest Posts":"Internal"};
 function visibleChannels(){
   const ch=[{id:"general",name:"General"}];
@@ -648,14 +649,43 @@ function visibleChannels(){
   });
   return ch;
 }
-function updateChatBtn(){ const b=$("#chatBtn"); if(b) b.innerHTML="💬"+(chatUnread?'<span class="dot"></span>':''); }
-function openChat(){ chatOpen=true; chatUnread=false; updateChatBtn(); $("#chatPanel").classList.remove("hidden"); renderChannelTabs(); openChannel(chatChannel); setTimeout(()=>{const i=$("#chatText");if(i)i.focus();},100); }
+function getSeen(){ try{return JSON.parse(localStorage.getItem("lt_seen")||"{}");}catch(e){return {};} }
+function setSeen(ch,iso){ const s=getSeen(); s[ch]=iso; try{localStorage.setItem("lt_seen",JSON.stringify(s));}catch(e){} }
+async function computeUnread(){
+  const seen=getSeen();
+  for(const c of visibleChannels()){
+    const since=seen[c.id]||"1970-01-01T00:00:00Z";
+    try{ const {count}=await sb.from("messages").select("id",{count:"exact",head:true}).eq("channel",c.id).gt("created_at",since); unread[c.id]=count||0; }
+    catch(e){ unread[c.id]=0; }
+  }
+  updateChatBtn(); if(chatOpen) renderChannelTabs();
+}
+function playBeep(){
+  try{
+    _audioCtx=_audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    if(_audioCtx.state==="suspended") _audioCtx.resume();
+    const ctx=_audioCtx, o=ctx.createOscillator(), g=ctx.createGain();
+    o.type="sine"; o.connect(g); g.connect(ctx.destination);
+    o.frequency.setValueAtTime(660,ctx.currentTime); o.frequency.setValueAtTime(880,ctx.currentTime+0.09);
+    g.gain.setValueAtTime(0.07,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.28);
+    o.start(); o.stop(ctx.currentTime+0.3);
+  }catch(e){}
+}
+function chatAlert(m){
+  playBeep();
+  const chName=(CHANNEL_SHORT[m.channel]||(m.channel==="general"?"General":m.channel));
+  notify("💬 "+(m.sender_name||m.sender_username)+" · "+chName, m.body);
+}
+function updateChatBtn(){ const b=$("#chatBtn"); if(!b)return; const total=Object.values(unread).reduce((a,n)=>a+(n||0),0);
+  b.innerHTML="💬"+(total>0?`<span class="dot">${total>9?"9+":total}</span>`:""); }
+function openChat(){ chatOpen=true; updateChatBtn(); $("#chatPanel").classList.remove("hidden"); renderChannelTabs(); openChannel(chatChannel); setTimeout(()=>{const i=$("#chatText");if(i)i.focus();},100); }
 function closeChat(){ chatOpen=false; $("#chatPanel").classList.add("hidden"); }
 function renderChannelTabs(){
   const wrap=$("#chatTabs"); if(!wrap)return; wrap.innerHTML="";
   const chs=visibleChannels();
   if(!chs.some(c=>c.id===chatChannel)) chatChannel="general";
-  chs.forEach(c=>{ const b=document.createElement("button"); b.className="chat-tab"+(c.id===chatChannel?" active":""); b.textContent=c.name;
+  chs.forEach(c=>{ const b=document.createElement("button"); b.className="chat-tab"+(c.id===chatChannel?" active":"");
+    const u=unread[c.id]||0; b.innerHTML=esc(c.name)+(u>0?` <span class="ch-badge">${u>99?"99+":u}</span>`:"");
     b.onclick=()=>{ chatChannel=c.id; renderChannelTabs(); openChannel(c.id); }; wrap.appendChild(b); });
 }
 async function openChannel(channel){
@@ -666,10 +696,12 @@ async function openChannel(channel){
   try{ const r=await sb.from("messages").select("*").eq("channel",channel).order("created_at",{ascending:true}).limit(300); data=r.data||[]; }catch(e){}
   if(chatChannel!==channel) return; // user switched while loading
   box.innerHTML="";
-  if(!data.length){ box.innerHTML='<div class="chat-empty">No messages yet. Say hi 👋</div>'; return; }
+  if(!data.length){ box.innerHTML='<div class="chat-empty">No messages yet. Say hi 👋</div>'; markChannelSeen(channel); return; }
   data.forEach(m=>appendMessage(m,true));
   scrollChatBottom();
+  markChannelSeen(channel);
 }
+function markChannelSeen(channel){ setSeen(channel,new Date().toISOString()); unread[channel]=0; updateChatBtn(); renderChannelTabs(); }
 function appendMessage(m, bulk){
   if(shownMsgIds.has(m.id)) return; shownMsgIds.add(m.id);
   const box=$("#chatMsgs"); if(!box)return;
@@ -690,8 +722,11 @@ async function sendMessage(){
   catch(e){ toast("Message failed to send"); }
 }
 function onNewMessage(m){
-  if(chatOpen && m.channel===chatChannel){ appendMessage(m); }
-  else { chatUnread=true; updateChatBtn(); }
+  if(chatOpen && m.channel===chatChannel){ appendMessage(m); setSeen(m.channel,new Date().toISOString()); return; }
+  if(m.sender_username===meUser) return; // ignore echoes of my own messages
+  unread[m.channel]=(unread[m.channel]||0)+1;
+  updateChatBtn(); if(chatOpen) renderChannelTabs();
+  chatAlert(m);
 }
 $("#chatBtn").onclick=openChat;
 $("#chatClose").onclick=closeChat;
@@ -724,7 +759,7 @@ function startApp(){
   const elevated=(me===MANAGER||me===ADMIN);
   $("#mgrBtn").classList.toggle("hidden", !elevated);
   $("#mgrBtn").textContent=(me===ADMIN?"⚙ Admin":"⚙ Manager");
-  chatOpen=false; chatChannel="general"; chatUnread=false; updateChatBtn();
+  chatOpen=false; chatChannel="general"; unread={}; updateChatBtn(); computeUnread();
   buildAssigneeChips();
   render();
   requestNotify();
