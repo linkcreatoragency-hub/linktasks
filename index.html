@@ -89,6 +89,7 @@
   .card .meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
   .tag{font-size:11px;font-weight:700;padding:3px 8px;border-radius:7px;display:inline-flex;align-items:center;gap:4px}
   .tag.assignee{background:var(--surface-2);color:var(--text)}
+  .tag.unassigned{background:var(--surface-2);color:var(--muted);font-style:italic}
   .tag.prio-high{background:rgba(239,68,68,.15);color:#fca5a5}
   .tag.prio-med{background:rgba(245,158,11,.15);color:#fcd34d}
   .tag.prio-low{background:rgba(59,130,246,.15);color:#93c5fd}
@@ -103,6 +104,7 @@
     background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
   .statusbtns button.cur{color:#fff}
   .iconbtn{font-size:16px;color:var(--muted);padding:4px 6px;border-radius:8px}
+  .claimBtn{font-size:11px;font-weight:700;color:#86efac;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);padding:6px 11px;border-radius:8px;margin-right:6px}
   .empty{text-align:center;color:var(--muted);font-size:13px;padding:18px;border:1px dashed var(--border);border-radius:12px}
 
   /* ===== FAB ===== */
@@ -377,6 +379,7 @@ let filterAssignee="all";
 let view="board";
 let editingId=null;
 let lastStatus={}, statusInit=false;
+let meUser=""; // current user's login username (for self-assign eligibility)
 
 /* ---------- helpers ---------- */
 const $=s=>document.querySelector(s);
@@ -437,6 +440,7 @@ async function loadData(){
 
 async function afterLogin(user){
   me=(user.user_metadata && user.user_metadata.name) || user.email;
+  meUser=(user.user_metadata && user.user_metadata.username) || "";
   await loadData();
   startApp();
 }
@@ -461,7 +465,7 @@ $("#loginPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
 $("#loginUser").addEventListener("keydown",e=>{if(e.key==="Enter")$("#loginPass").focus();});
 function fromRow(r){return{id:r.id,title:r.title,website:r.website_url,keywords:r.keywords,note:r.note,category:r.category,assignee:r.assignee,
   priority:r.priority,due:r.due_date,status:r.status,created_at:r.created_at};}
-function toRow(t){return{id:t.id,title:t.title,website_url:t.website||null,keywords:t.keywords||null,note:t.note||null,category:t.category||null,assignee:t.assignee,
+function toRow(t){return{id:t.id,title:t.title,website_url:t.website||null,keywords:t.keywords||null,note:t.note||null,category:t.category||null,assignee:t.assignee||null,
   priority:t.priority,due_date:t.due||null,status:t.status};}
 
 async function persist(task,action){
@@ -518,10 +522,13 @@ function renderAssignPills(category, keepCurrent){
   if(keepCurrent && pickedAssignee && !list.includes(pickedAssignee) && members.some(m=>m.name===pickedAssignee)){
     list=[pickedAssignee,...list];
   }
-  if(!list.includes(pickedAssignee)) pickedAssignee=list[0]||"";
-  list.forEach(n=>{const b=document.createElement("button");b.className="pick"+(n===pickedAssignee?" sel":"");
-    b.textContent=n;b.onclick=()=>{pickedAssignee=n;
-      fa.querySelectorAll(".pick").forEach(x=>x.classList.toggle("sel",x===b));};fa.appendChild(b);});
+  // if a member is picked but not in the list, fall back to Unassigned
+  if(pickedAssignee && !list.includes(pickedAssignee)) pickedAssignee="";
+  const mk=(label,val)=>{const b=document.createElement("button");b.className="pick"+(val===pickedAssignee?" sel":"");
+    b.textContent=label;b.onclick=()=>{pickedAssignee=val;
+      fa.querySelectorAll(".pick").forEach(x=>x.classList.remove("sel"));b.classList.add("sel");};fa.appendChild(b);};
+  mk("Unassigned","");   // tasks can be left unassigned; members self-assign later
+  list.forEach(n=>mk(n,n));
 }
 
 let managerOpen=false;
@@ -566,7 +573,7 @@ function renderManager(){
   const soon=open.filter(t=>daysUntil(t.due)>=0&&daysUntil(t.due)<=3).sort((a,b)=>(a.due||"").localeCompare(b.due||""));
   const item=t=>{const dl=dueLabel(t.due);return `<div class="att" data-id="${t.id}">
     <span class="att-t">${esc(t.title)}</span>
-    <span class="att-m"><span class="avatar mini" style="background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}</span>
+    <span class="att-m">${t.assignee?`<span class="avatar mini" style="background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}`:`<span class="muted-s">Unassigned</span>`}</span>
     <span class="att-d ${dl.cls}">${dl.txt}</span></div>`;};
   const memList=members.map(m=>`<div class="mrow">
     <span class="mrow-n"><span class="avatar mini" style="background:${colorFor(m.name)}">${initials(m.name)}</span>${esc(m.name)}${m.name===MANAGER?'<span class="badge-mgr">Mgr</span>':''}</span>
@@ -724,7 +731,7 @@ function taskCard(t){
     ${t.note?`<p class="desc">${esc(t.note)}</p>`:""}
     <div class="meta">
       ${t.category?`<span class="tag cat" style="color:${catColor(t.category)};border:1px solid ${catColor(t.category)}66;background:${catColor(t.category)}1a">${esc(t.category)}</span>`:""}
-      <span class="tag assignee"><span class="avatar" style="width:18px;height:18px;font-size:10px;background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}</span>
+      ${t.assignee?`<span class="tag assignee"><span class="avatar" style="width:18px;height:18px;font-size:10px;background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}</span>`:`<span class="tag unassigned">Unassigned</span>`}
       <span class="tag ${pm[0]}">${pm[1]}</span>
       ${qcReviewerFor(t)?`<span class="tag qc">🔍 QC: ${esc(qcReviewerFor(t))}</span>`:""}
       ${dl?`<span class="tag due ${dl.cls}">⏰ ${dl.txt}</span>`:""}
@@ -734,8 +741,10 @@ function taskCard(t){
         ${STATUSES.map(s=>`<button data-s="${s.key}" class="${t.status===s.key?'cur':''}"
           style="${t.status===s.key?`background:${s.color};border-color:${s.color}`:''}">${s.label}</button>`).join("")}
       </div>
+      ${canClaim(t)?`<button class="claimBtn">＋ Claim</button>`:""}
       <button class="iconbtn editBtn">✏️</button>
     </div>`;
+  const cb=c.querySelector(".claimBtn"); if(cb) cb.onclick=()=>claimTask(t);
   c.querySelectorAll(".statusbtns button").forEach(b=>{
     b.onclick=()=>{t.status=b.dataset.s;persist(t,"update");render();
       if(t.status==="done")toast("Marked done ✅");};});
@@ -745,6 +754,8 @@ function taskCard(t){
 function esc(s){return(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
 function safeUrl(u){if(!u)return null;u=String(u).trim();if(/^https?:\/\//i.test(u))return u;if(/^[\w-]+(\.[\w-]+)+(\/.*)?$/.test(u))return "https://"+u;return null;}
 function shortUrl(u){return String(u||"").replace(/^https?:\/\//i,"").replace(/\/+$/,"");}
+function canClaim(t){ return !!(t && !t.assignee && t.category && catAccess[t.category] && catAccess[t.category].includes(meUser)); }
+function claimTask(t){ t.assignee=me; persist(t,"update"); render(); toast("Claimed: "+t.title); }
 
 /* ---------- editor ---------- */
 let pickedPrio="med",pickedAssignee="";
@@ -759,7 +770,7 @@ function openEditor(task){
   $("#fDue").value=task?(task.due||""):"";
   $("#fStatus").value=task?task.status:"todo";
   pickedPrio=task?task.priority:"med";
-  pickedAssignee=task?task.assignee:me;
+  pickedAssignee=task?(task.assignee||""):"";
   // priority
   $("#fPrio").querySelectorAll(".pick").forEach(b=>b.classList.toggle("sel",b.dataset.p===pickedPrio));
   // assignees (filtered to the selected category's members)
@@ -780,7 +791,6 @@ function closeSheet(){$("#scrim").classList.add("hidden");editingId=null;}
 $("#saveBtn").onclick=()=>{
   const title=$("#fTitle").value.trim();
   if(!title){toast("Add a task title");return;}
-  if(!pickedAssignee)pickedAssignee=me;
   let t;
   if(editingId){t=tasks.find(x=>x.id===editingId);}
   if(!t){t={id:uid(),created_at:new Date().toISOString()};tasks.unshift(t);}
