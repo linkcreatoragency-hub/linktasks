@@ -417,6 +417,7 @@ let me=localStorage.getItem("lt_me")||"";
 let filterAssignee="all";
 let view="board";
 let editingId=null;
+let canEditSheet=false;
 let lastStatus={}, statusInit=false;
 let meUser=""; // current user's login username (for self-assign eligibility)
 
@@ -885,8 +886,10 @@ function taskCard(t){
     </div>`;
   const cb=c.querySelector(".claimBtn"); if(cb) cb.onclick=()=>claimTask(t);
   c.querySelectorAll(".statusbtns button").forEach(b=>{
-    b.onclick=()=>{t.status=b.dataset.s;persist(t,"update");render();
-      if(t.status==="done")toast("Marked done ✅");};});
+    b.onclick=()=>{ const ns=b.dataset.s;
+      if(blockCompleteNoSheet(t.category,t.sheet,ns)){openEditor(t);return;}
+      t.status=ns;persist(t,"update");render();
+      if(ns==="done")toast("Marked done ✅");};});
   c.querySelector(".editBtn").onclick=()=>openEditor(t);
   return c;
 }
@@ -895,6 +898,14 @@ function safeUrl(u){if(!u)return null;u=String(u).trim();if(/^https?:\/\//i.test
 function shortUrl(u){return String(u||"").replace(/^https?:\/\//i,"").replace(/\/+$/,"");}
 function canClaim(t){ return !!(t && !t.assignee && t.category && catAccess[t.category] && catAccess[t.category].includes(meUser)); }
 function claimTask(t){ t.assignee=me; persist(t,"update"); render(); toast("Claimed: "+t.title); }
+// Foundational Link tasks need a live-report spreadsheet link before they can be marked Complete.
+function blockCompleteNoSheet(category, sheet, newStatus){
+  if(newStatus==="complete" && category==="Foundational Link" && !(sheet && String(sheet).trim())){
+    toast("📊 Add the Spreadsheet (live report) link before marking Complete");
+    return true;
+  }
+  return false;
+}
 
 /* ---------- editor ---------- */
 let pickedPrio="med",pickedAssignee="";
@@ -907,7 +918,9 @@ function openEditor(task){
   $("#fNote").value=task?(task.note||""):"";
   $("#fCategory").value=task?(task.category||""):"";
   $("#fSheet").value=task?(task.sheet||""):"";
-  $("#sheetField").style.display=(me===MANAGER||me===ADMIN)?"block":"none";
+  // Manager/Admin always; the task's own assignee can also edit the live-report sheet link.
+  canEditSheet=(me===MANAGER||me===ADMIN||(!!task && task.assignee===me));
+  $("#sheetField").style.display=canEditSheet?"block":"none";
   $("#fDue").value=task?(task.due||""):"";
   $("#fStatus").value=task?task.status:"todo";
   pickedPrio=task?task.priority:"med";
@@ -932,12 +945,15 @@ function closeSheet(){$("#scrim").classList.add("hidden");editingId=null;}
 $("#saveBtn").onclick=()=>{
   const title=$("#fTitle").value.trim();
   if(!title){toast("Add a task title");return;}
-  let t;
-  if(editingId){t=tasks.find(x=>x.id===editingId);}
+  let t = editingId ? tasks.find(x=>x.id===editingId) : null;
+  const newCategory=$("#fCategory").value;
+  const newStatus=$("#fStatus").value;
+  const newSheet=canEditSheet?$("#fSheet").value.trim():((t&&t.sheet)||"");
+  if(blockCompleteNoSheet(newCategory,newSheet,newStatus))return; // can't go Complete without a sheet (Foundational)
   if(!t){t={id:uid(),created_at:new Date().toISOString()};tasks.unshift(t);}
-  t.title=title;t.website=$("#fWebsite").value.trim();t.keywords=$("#fKeywords").value.trim();t.note=$("#fNote").value.trim();t.category=$("#fCategory").value;t.assignee=pickedAssignee;
-  if(me===MANAGER||me===ADMIN) t.sheet=$("#fSheet").value.trim(); // only manager/admin set the live-report sheet
-  t.priority=pickedPrio;t.due=$("#fDue").value||null;t.status=$("#fStatus").value;
+  t.title=title;t.website=$("#fWebsite").value.trim();t.keywords=$("#fKeywords").value.trim();t.note=$("#fNote").value.trim();t.category=newCategory;t.assignee=pickedAssignee;
+  if(canEditSheet) t.sheet=$("#fSheet").value.trim(); // manager/admin or the task's assignee set the live-report sheet
+  t.priority=pickedPrio;t.due=$("#fDue").value||null;t.status=newStatus;
   persist(t,"update");closeSheet();render();toast(editingId?"Task updated":"Task created");
 };
 $("#deleteBtn").onclick=()=>{
