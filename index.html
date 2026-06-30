@@ -359,6 +359,7 @@ let sb=null, cloud=false;
 let tasks=[];
 let team=[];
 let members=[];
+let catAccess={}; // {category: [username,...]} for filtering Assign To
 let me=localStorage.getItem("lt_me")||"";
 let filterAssignee="all";
 let view="board";
@@ -410,6 +411,7 @@ async function loadData(){
     tasks=data.map(fromRow);
   }catch(e){tasks=[];}
   await loadMembers();
+  await loadCategoryAccess();
   if(!window.__rt){
     window.__rt=true;
     sb.channel("tasks-rt").on("postgres_changes",{event:"*",schema:"public",table:"tasks"},
@@ -477,6 +479,34 @@ async function loadMembers(){
     members=(local||DEFAULT_TEAM).map(n=>({id:n,name:n}));
   }
   team=members.map(m=>m.name);
+}
+
+function memberUsername(m){return (m.username||String(m.name||"").toLowerCase().split(/\s+/)[0]);}
+async function loadCategoryAccess(){
+  catAccess={};
+  if(!cloud)return;
+  try{
+    const {data}=await sb.from("category_access").select("*");
+    (data||[]).forEach(r=>{(catAccess[r.category]=catAccess[r.category]||[]).push(r.username);});
+  }catch(e){catAccess={};}
+}
+// Build the Assign To pills, filtered to the selected category's members.
+function renderAssignPills(category, keepCurrent){
+  const fa=$("#fAssign");if(!fa)return;fa.innerHTML="";
+  let list;
+  if(category && catAccess[category] && catAccess[category].length){
+    const allowed=new Set(catAccess[category]);
+    list=members.filter(m=>allowed.has(memberUsername(m))).map(m=>m.name);
+  }else{ list=members.map(m=>m.name); }
+  if(!list.length) list=members.map(m=>m.name);
+  // when opening an existing task, keep its current assignee available even if outside the category
+  if(keepCurrent && pickedAssignee && !list.includes(pickedAssignee) && members.some(m=>m.name===pickedAssignee)){
+    list=[pickedAssignee,...list];
+  }
+  if(!list.includes(pickedAssignee)) pickedAssignee=list[0]||"";
+  list.forEach(n=>{const b=document.createElement("button");b.className="pick"+(n===pickedAssignee?" sel":"");
+    b.textContent=n;b.onclick=()=>{pickedAssignee=n;
+      fa.querySelectorAll(".pick").forEach(x=>x.classList.toggle("sel",x===b));};fa.appendChild(b);});
 }
 
 let managerOpen=false;
@@ -690,11 +720,8 @@ function openEditor(task){
   pickedAssignee=task?task.assignee:me;
   // priority
   $("#fPrio").querySelectorAll(".pick").forEach(b=>b.classList.toggle("sel",b.dataset.p===pickedPrio));
-  // assignees
-  const fa=$("#fAssign");fa.innerHTML="";
-  team.forEach(n=>{const b=document.createElement("button");b.className="pick"+(n===pickedAssignee?" sel":"");
-    b.textContent=n;b.onclick=()=>{pickedAssignee=n;
-      fa.querySelectorAll(".pick").forEach(x=>x.classList.toggle("sel",x===b));};fa.appendChild(b);});
+  // assignees (filtered to the selected category's members)
+  renderAssignPills($("#fCategory").value, true);
   $("#deleteRow").style.display=task?"flex":"none";
   $("#scrim").classList.remove("hidden");
 }
@@ -702,6 +729,7 @@ $("#fPrio").querySelectorAll(".pick").forEach(b=>{
   b.onclick=()=>{pickedPrio=b.dataset.p;
     $("#fPrio").querySelectorAll(".pick").forEach(x=>x.classList.toggle("sel",x===b));};});
 
+$("#fCategory").addEventListener("change",()=>renderAssignPills($("#fCategory").value, false));
 $("#fab").onclick=()=>openEditor(null);
 $("#cancelBtn").onclick=closeSheet;
 $("#scrim").onclick=e=>{if(e.target===$("#scrim"))closeSheet();};
