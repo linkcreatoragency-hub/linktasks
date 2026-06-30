@@ -1,5 +1,5 @@
 // LinkTasks service worker — offline app shell caching
-const CACHE = "linktasks-v14";
+const CACHE = "linktasks-v15";
 // Relative paths resolve against the SW's own location (works on any host/sub-path)
 const ASSETS = ["./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 

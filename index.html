@@ -85,6 +85,7 @@
   .card .desc{font-size:13px;color:var(--muted);margin:0 0 10px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
   .card .tlink{display:inline-block;font-size:13px;color:#93c5fd;text-decoration:none;margin:0 0 7px;word-break:break-all}
   .card .tlink:active{opacity:.7}
+  .card .tlink.sheet{color:#86efac;display:block}
   .card .tkw{font-size:12px;color:var(--muted);margin:0 0 8px;word-break:break-word}
   .card .meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
   .tag{font-size:11px;font-weight:700;padding:3px 8px;border-radius:7px;display:inline-flex;align-items:center;gap:4px}
@@ -303,6 +304,10 @@
       <label>Note (optional)</label>
       <textarea id="fNote" placeholder="Anchor text, contact, instructions…"></textarea>
     </div>
+    <div class="field" id="sheetField">
+      <label>📊 Spreadsheet URL (live work report)</label>
+      <input id="fSheet" type="url" placeholder="https://docs.google.com/spreadsheets/…" autocapitalize="none" autocorrect="off">
+    </div>
     <div class="field">
       <label>Category</label>
       <select id="fCategory">
@@ -499,9 +504,9 @@ async function doLogin(){
 $("#loginBtn").onclick=doLogin;
 $("#loginPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
 $("#loginUser").addEventListener("keydown",e=>{if(e.key==="Enter")$("#loginPass").focus();});
-function fromRow(r){return{id:r.id,title:r.title,website:r.website_url,keywords:r.keywords,note:r.note,category:r.category,assignee:r.assignee,
+function fromRow(r){return{id:r.id,title:r.title,website:r.website_url,keywords:r.keywords,note:r.note,category:r.category,sheet:r.sheet_url,assignee:r.assignee,
   priority:r.priority,due:r.due_date,status:r.status,created_at:r.created_at};}
-function toRow(t){return{id:t.id,title:t.title,website_url:t.website||null,keywords:t.keywords||null,note:t.note||null,category:t.category||null,assignee:t.assignee||null,
+function toRow(t){return{id:t.id,title:t.title,website_url:t.website||null,keywords:t.keywords||null,note:t.note||null,category:t.category||null,sheet_url:t.sheet||null,assignee:t.assignee||null,
   priority:t.priority,due_date:t.due||null,status:t.status};}
 
 async function persist(task,action){
@@ -860,6 +865,7 @@ function taskCard(t){
   c.innerHTML=`
     <p class="title">${esc(t.title)}</p>
     ${safeUrl(t.website)?`<a class="tlink" href="${esc(safeUrl(t.website))}" target="_blank" rel="noopener noreferrer">🔗 ${esc(shortUrl(t.website))}</a>`:""}
+    ${safeUrl(t.sheet)?`<a class="tlink sheet" href="${esc(safeUrl(t.sheet))}" target="_blank" rel="noopener noreferrer">📊 Live report</a>`:""}
     ${t.keywords?`<p class="tkw">🔑 ${esc(t.keywords)}</p>`:""}
     ${t.note?`<p class="desc">${esc(t.note)}</p>`:""}
     <div class="meta">
@@ -900,6 +906,8 @@ function openEditor(task){
   $("#fKeywords").value=task?(task.keywords||""):"";
   $("#fNote").value=task?(task.note||""):"";
   $("#fCategory").value=task?(task.category||""):"";
+  $("#fSheet").value=task?(task.sheet||""):"";
+  $("#sheetField").style.display=(me===MANAGER||me===ADMIN)?"block":"none";
   $("#fDue").value=task?(task.due||""):"";
   $("#fStatus").value=task?task.status:"todo";
   pickedPrio=task?task.priority:"med";
@@ -928,6 +936,7 @@ $("#saveBtn").onclick=()=>{
   if(editingId){t=tasks.find(x=>x.id===editingId);}
   if(!t){t={id:uid(),created_at:new Date().toISOString()};tasks.unshift(t);}
   t.title=title;t.website=$("#fWebsite").value.trim();t.keywords=$("#fKeywords").value.trim();t.note=$("#fNote").value.trim();t.category=$("#fCategory").value;t.assignee=pickedAssignee;
+  if(me===MANAGER||me===ADMIN) t.sheet=$("#fSheet").value.trim(); // only manager/admin set the live-report sheet
   t.priority=pickedPrio;t.due=$("#fDue").value||null;t.status=$("#fStatus").value;
   persist(t,"update");closeSheet();render();toast(editingId?"Task updated":"Task created");
 };
