@@ -328,7 +328,7 @@
 <!-- ===== Manager Panel (Robin only) ===== -->
 <div class="mgr-overlay hidden" id="mgrPanel">
   <div class="mgr-sheet">
-    <div class="mgr-top"><h3>⚙ Manager Panel</h3><button class="mgr-close" id="mgrClose">✕</button></div>
+    <div class="mgr-top"><h3 id="mgrTitle">⚙ Manager Panel</h3><button class="mgr-close" id="mgrClose">✕</button></div>
     <div id="mgrBody"></div>
   </div>
 </div>
@@ -345,6 +345,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_4civuymPQJjNy8W_cUF5XQ_qAo4YpDd";
 
 const DEFAULT_TEAM = ["Robin","Shafaat Rahman","Rishat Rahman","Abdullah","Shakil","Mutman","Anhar","Mahmudul","Shumon","Ontor"];
 const MANAGER = "Robin"; // Task Manager — sees the Manager Panel
+const ADMIN = "Ashifur Rahman"; // Admin — full control, can assign to anyone incl. Manager
 const STATUSES = [
   {key:"todo",     label:"To Do",       color:"#3b82f6"},
   {key:"progress", label:"In Progress", color:"#f59e0b"},
@@ -506,7 +507,9 @@ async function loadCategoryAccess(){
 function renderAssignPills(category, keepCurrent){
   const fa=$("#fAssign");if(!fa)return;fa.innerHTML="";
   let list;
-  if(category && catAccess[category] && catAccess[category].length){
+  if(me===ADMIN){
+    list=members.map(m=>m.name); // admin can assign to anyone, including the Manager
+  }else if(category && catAccess[category] && catAccess[category].length){
     const allowed=new Set(catAccess[category]);
     list=members.filter(m=>allowed.has(memberUsername(m))).map(m=>m.name);
   }else{ list=members.map(m=>m.name); }
@@ -522,7 +525,7 @@ function renderAssignPills(category, keepCurrent){
 }
 
 let managerOpen=false;
-function openManager(){managerOpen=true;renderManager();$("#mgrPanel").classList.remove("hidden");}
+function openManager(){managerOpen=true;const mt=$("#mgrTitle");if(mt)mt.textContent=(me===ADMIN?"⚙ Admin Dashboard":"⚙ Manager Panel");renderManager();$("#mgrPanel").classList.remove("hidden");}
 function closeManager(){managerOpen=false;$("#mgrPanel").classList.add("hidden");}
 
 function statsFor(name){
@@ -614,7 +617,9 @@ function startApp(){
   $("#myName").textContent=me;
   $("#myAvatar").textContent=initials(me);
   $("#myAvatar").style.background=colorFor(me);
-  $("#mgrBtn").classList.toggle("hidden", me!==MANAGER);
+  const elevated=(me===MANAGER||me===ADMIN);
+  $("#mgrBtn").classList.toggle("hidden", !elevated);
+  $("#mgrBtn").textContent=(me===ADMIN?"⚙ Admin":"⚙ Manager");
   buildAssigneeChips();
   render();
   requestNotify();
@@ -673,7 +678,7 @@ function checkTransitions(){
         const qc=qcReviewerFor(t);
         if(qc && qc===me) notify("🔍 QC needed", "'"+t.title+"' is ready for your QC (by "+t.assignee+")");
       }else if(t.status==="done"){
-        if(me===MANAGER) notify("✅ Task Done", "'"+t.title+"' marked Done — "+t.assignee);
+        if(me===MANAGER||me===ADMIN) notify("✅ Task Done", "'"+t.title+"' marked Done — "+t.assignee);
       }
     }
     lastStatus[t.id]=t.status;
