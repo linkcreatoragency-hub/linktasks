@@ -93,6 +93,7 @@
   .tag.prio-med{background:rgba(245,158,11,.15);color:#fcd34d}
   .tag.prio-low{background:rgba(59,130,246,.15);color:#93c5fd}
   .tag.cat{font-weight:700}
+  .tag.qc{background:rgba(168,85,247,.15);color:#d8b4fe;font-weight:700}
   .tag.due{background:var(--surface-2);color:var(--muted)}
   .tag.due.soon{color:#fcd34d}
   .tag.due.over{background:rgba(239,68,68,.15);color:#fca5a5}
@@ -306,9 +307,10 @@
       <div class="field">
         <label>Status</label>
         <select id="fStatus">
-          <option value="todo">To-Do</option>
+          <option value="todo">To Do</option>
           <option value="progress">In Progress</option>
-          <option value="review">Review</option>
+          <option value="complete">Complete</option>
+          <option value="qc">QC</option>
           <option value="done">Done</option>
         </select>
       </div>
@@ -344,11 +346,20 @@ const SUPABASE_ANON_KEY = "sb_publishable_4civuymPQJjNy8W_cUF5XQ_qAo4YpDd";
 const DEFAULT_TEAM = ["Robin","Shafaat Rahman","Rishat Rahman","Abdullah","Shakil","Mutman","Anhar","Mahmudul","Shumon","Ontor"];
 const MANAGER = "Robin"; // Task Manager — sees the Manager Panel
 const STATUSES = [
-  {key:"todo",     label:"To-Do",       color:"#3b82f6"},
+  {key:"todo",     label:"To Do",       color:"#3b82f6"},
   {key:"progress", label:"In Progress", color:"#f59e0b"},
-  {key:"review",   label:"Review",      color:"#a855f7"},
+  {key:"complete", label:"Complete",    color:"#06b6d4"},
+  {key:"qc",       label:"QC",          color:"#a855f7"},
   {key:"done",     label:"Done",        color:"#22c55e"},
 ];
+// QC routing for Foundational Link: reviewer -> the people whose work they QC
+const QC_CATEGORY = "Foundational Link";
+const QC_GROUPS = { "Shakil":["Shakil","Mutman","Anhar"], "Mahmudul":["Mahmudul","Shumon","Ontor"] };
+function qcReviewerFor(t){
+  if(!t || t.category!==QC_CATEGORY) return null;
+  for(const qc in QC_GROUPS){ if(QC_GROUPS[qc].includes(t.assignee)) return qc; }
+  return null;
+}
 const AV_COLORS=["#6366f1","#ec4899","#22c55e","#f59e0b","#06b6d4","#a855f7","#ef4444","#14b8a6"];
 const CATEGORIES=["Foundational Link","Wiki & Redirect","Premium Guest Posts & Link Insertion","Internal Guest Posts"];
 const CAT_COLORS={"Foundational Link":"#3b82f6","Wiki & Redirect":"#06b6d4","Premium Guest Posts & Link Insertion":"#a855f7","Internal Guest Posts":"#22c55e"};
@@ -364,6 +375,7 @@ let me=localStorage.getItem("lt_me")||"";
 let filterAssignee="all";
 let view="board";
 let editingId=null;
+let lastStatus={}, statusInit=false;
 
 /* ---------- helpers ---------- */
 const $=s=>document.querySelector(s);
@@ -646,7 +658,31 @@ function visibleTasks(){
   return list;
 }
 
+function notify(title, body){
+  if("Notification" in window && Notification.permission==="granted"){
+    try{ new Notification(title, {body, icon:"icon-192.png"}); }catch(e){}
+  }
+  toast(title);
+}
+// Detect status transitions and alert the right person (QC reviewer on Complete, Manager on Done)
+function checkTransitions(){
+  tasks.forEach(t=>{
+    const prev=lastStatus[t.id];
+    if(statusInit && prev!==undefined && prev!==t.status){
+      if(t.status==="complete"){
+        const qc=qcReviewerFor(t);
+        if(qc && qc===me) notify("🔍 QC needed", "'"+t.title+"' is ready for your QC (by "+t.assignee+")");
+      }else if(t.status==="done"){
+        if(me===MANAGER) notify("✅ Task Done", "'"+t.title+"' marked Done — "+t.assignee);
+      }
+    }
+    lastStatus[t.id]=t.status;
+  });
+  statusInit=true;
+}
+
 function render(){
+  checkTransitions();
   const board=$("#board");board.innerHTML="";
   const list=visibleTasks();
 
@@ -685,6 +721,7 @@ function taskCard(t){
       ${t.category?`<span class="tag cat" style="color:${catColor(t.category)};border:1px solid ${catColor(t.category)}66;background:${catColor(t.category)}1a">${esc(t.category)}</span>`:""}
       <span class="tag assignee"><span class="avatar" style="width:18px;height:18px;font-size:10px;background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}</span>
       <span class="tag ${pm[0]}">${pm[1]}</span>
+      ${qcReviewerFor(t)?`<span class="tag qc">🔍 QC: ${esc(qcReviewerFor(t))}</span>`:""}
       ${dl?`<span class="tag due ${dl.cls}">⏰ ${dl.txt}</span>`:""}
     </div>
     <div class="row2">
