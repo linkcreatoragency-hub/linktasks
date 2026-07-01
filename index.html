@@ -195,6 +195,23 @@
   .mgr-close{font-size:16px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);
     width:34px;height:34px;border-radius:10px}
   #mgrBody h4{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:20px 2px 10px}
+  .ordconn{border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+  .ordconn input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card,#1a1d27);color:inherit;font-size:14px}
+  .lnk{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 4px}
+  .lnk:hover{color:#fff}
+  .ordlist{display:flex;flex-direction:column;gap:10px}
+  .ordcard{border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--card,#1a1d27)}
+  .ordtop{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ordsvc{font-weight:700;font-size:14px}
+  .ordamt{font-weight:700;color:#22c55e}
+  .ordmeta{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:12px;color:var(--muted)}
+  .ordstatus{background:rgba(99,102,241,.18);color:#a5b4fc;padding:1px 8px;border-radius:999px}
+  .ordkv{margin-top:6px;font-size:12.5px;word-break:break-all}
+  .orddet{margin-top:8px;font-size:12px}
+  .orddet summary{cursor:pointer;color:var(--muted)}
+  .ordall{margin-top:6px;display:flex;flex-direction:column;gap:3px;max-height:180px;overflow:auto;word-break:break-all;color:var(--muted)}
+  .btn.small{padding:6px 10px;font-size:12.5px;margin-top:10px}
+  .ordconv{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4);color:#86efac}
   .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
   .mgr-table{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
   .mgr-table th{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:9px 6px;border-bottom:1px solid var(--border)}
@@ -383,6 +400,12 @@
 ================================================================= */
 const SUPABASE_URL  = "https://fxbibgfdkyutlhrvirkq.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_4civuymPQJjNy8W_cUF5XQ_qAo4YpDd";
+
+// drlinks.net agency orders (separate Supabase project, same account). Admin-only.
+const DRLINKS_URL = "https://qeuabghsklvpagtpgzei.supabase.co";
+const DRLINKS_KEY = "sb_publishable_Y9HzGs0BptE1LHJnZt8kEQ_eNg4yszn"; // public (RLS-protected) key
+let sbOrders=null, ordersCache=[], ordersConnected=false, ordersErr="", ordersRT=null, ordersPoll=null;
+function ordersClient(){ if(!sbOrders) sbOrders=window.supabase.createClient(DRLINKS_URL,DRLINKS_KEY,{auth:{storageKey:"drlinks-orders-auth",persistSession:true,autoRefreshToken:true}}); return sbOrders; }
 
 const DEFAULT_TEAM = ["Robin","Shafaat Rahman","Rishat Rahman","Abdullah","Shakil","Mutman","Anhar","Mahmudul","Shumon","Ontor"];
 const MANAGER = "Robin"; // Task Manager — sees the Manager Panel
@@ -574,7 +597,7 @@ function renderAssignPills(category, keepCurrent){
 }
 
 let managerOpen=false;
-function openManager(){managerOpen=true;const mt=$("#mgrTitle");if(mt)mt.textContent=(me===ADMIN?"⚙ Admin Dashboard":"⚙ Manager Panel");renderManager();$("#mgrPanel").classList.remove("hidden");}
+function openManager(){managerOpen=true;const mt=$("#mgrTitle");if(mt)mt.textContent=(me===ADMIN?"⚙ Admin Dashboard":"⚙ Manager Panel");renderManager();$("#mgrPanel").classList.remove("hidden");if(me===ADMIN&&!ordersConnected)ordersInit();}
 function closeManager(){managerOpen=false;$("#mgrPanel").classList.add("hidden");}
 
 function statsFor(name){
@@ -604,6 +627,112 @@ async function removeMember(id){
   buildAssigneeChips();renderManager();render();toast("Removed "+m.name);
 }
 
+/* ---------- Agency Orders (drlinks.net) — Admin only ---------- */
+async function ordersInit(){
+  if(me!==ADMIN) return;
+  try{ const {data}=await ordersClient().auth.getSession();
+    if(data && data.session){ ordersConnected=true; await loadOrders(); startOrdersLive(); }
+  }catch(e){}
+}
+async function ordersConnect(email,pass){
+  ordersErr="";
+  const {error}=await ordersClient().auth.signInWithPassword({email:email.trim(),password:pass});
+  if(error){ ordersErr=error.message||"Sign-in failed"; ordersConnected=false; renderManager(); return; }
+  ordersConnected=true; await loadOrders(); startOrdersLive(); renderManager();
+}
+async function ordersDisconnect(){
+  try{ await ordersClient().auth.signOut(); }catch(e){}
+  ordersConnected=false; ordersCache=[]; ordersErr="";
+  if(ordersRT){ try{ordersClient().removeChannel(ordersRT);}catch(e){} ordersRT=null; }
+  if(ordersPoll){ clearInterval(ordersPoll); ordersPoll=null; }
+  renderManager();
+}
+async function loadOrders(){
+  try{
+    const {data,error}=await ordersClient().from("orders").select("*").order("created_at",{ascending:false});
+    if(error){ ordersErr=error.message; } else { ordersCache=data||[]; ordersErr=""; }
+  }catch(e){ ordersErr=String(e&&e.message||e); }
+  if(managerOpen) renderManager();
+}
+function startOrdersLive(){
+  try{ if(!ordersRT) ordersRT=ordersClient().channel("orders-rt")
+    .on("postgres_changes",{event:"*",schema:"public",table:"orders"},()=>loadOrders()).subscribe(); }catch(e){}
+  if(!ordersPoll) ordersPoll=setInterval(()=>{ if(ordersConnected&&managerOpen) loadOrders(); },30000);
+}
+function ordMoney(o){ const v=(o.total!=null?o.total:(o.amount!=null?o.amount:o.price)); return (v==null||v==="")?"":("$"+v); }
+function ordField(o,keys){ for(const k of keys){ if(o[k]!=null&&o[k]!=="") return o[k]; } return ""; }
+function mapServiceToCategory(s){ s=(s||"").toLowerCase();
+  if(s.includes("wiki")||s.includes("redirect")) return "Wiki & Redirect";
+  if(s.includes("internal")) return "Internal Guest Posts";
+  if(s.includes("foundation")||s.includes("profile")||s.includes("web 2")||s.includes("tier")||s.includes("citation")) return "Foundational Link";
+  if(s.includes("guest post")||s.includes("link insert")||s.includes("igaming")||s.includes("insertion")||s.includes("premium")) return "Premium Guest Posts & Link Insertion";
+  return ""; }
+function orderCardHTML(o,i){
+  const num=ordField(o,["order_number","order_id","id"]);
+  const svc=ordField(o,["service_name","service","package","product","plan"])||"Order";
+  const cust=ordField(o,["customer","customer_name","client_name","client_email","customer_email","email","name"]);
+  const st=ordField(o,["status","order_status","payment_status"]);
+  const when=o.created_at?new Date(o.created_at).toLocaleString():"";
+  const url=ordField(o,["target_url","url","website","link","page_url"]);
+  const kw=ordField(o,["keywords","anchor_text","anchor","keyword"]);
+  const amt=ordMoney(o);
+  return `<div class="ordcard">
+    <div class="ordtop"><span class="ordsvc">${esc(String(svc))}</span>${amt?`<span class="ordamt">${esc(amt)}</span>`:""}</div>
+    <div class="ordmeta">
+      ${num?`<span>#${esc(String(num))}</span>`:""}
+      ${cust?`<span>👤 ${esc(String(cust))}</span>`:""}
+      ${st?`<span class="ordstatus">${esc(String(st))}</span>`:""}
+      ${when?`<span>🕑 ${esc(when)}</span>`:""}
+    </div>
+    ${url?`<div class="ordkv">🔗 ${esc(String(url))}</div>`:""}
+    ${kw?`<div class="ordkv">🔑 ${esc(String(kw))}</div>`:""}
+    <details class="orddet"><summary>All details</summary><div class="ordall">${Object.entries(o).map(([k,v])=>`<div><b>${esc(k)}:</b> ${esc(v==null?"":(typeof v==="object"?JSON.stringify(v):String(v)))}</div>`).join("")}</div></details>
+    <button class="btn small ordconv" data-i="${i}">＋ Convert to task</button>
+  </div>`;
+}
+function ordersSectionHTML(){
+  if(me!==ADMIN) return "";
+  if(!ordersConnected){
+    return `<h4>📦 Agency Orders — drlinks.net</h4>
+      <div class="ordconn">
+        <p class="hint">Connect your <b>drlinks.net admin</b> account to pull live orders in here. Your login goes only to your own drlinks database — it isn't stored in this app.</p>
+        <input id="ordEmail" placeholder="drlinks admin email" autocapitalize="none" autocorrect="off" autocomplete="off">
+        <input id="ordPass" type="password" placeholder="drlinks password" autocomplete="off">
+        ${ordersErr?`<div class="login-err">${esc(ordersErr)}</div>`:""}
+        <button class="btn primary" id="ordConnectBtn">Connect &amp; load orders</button>
+      </div>`;
+  }
+  const list=ordersCache.length?ordersCache.map(orderCardHTML).join(""):'<div class="muted-row">No orders yet.</div>';
+  return `<h4>📦 Agency Orders — drlinks.net · ${ordersCache.length} <button class="lnk" id="ordRefresh" title="Refresh">↻</button> <button class="lnk" id="ordDisc" title="Disconnect">disconnect</button></h4>
+    ${ordersErr?`<div class="muted-row" style="color:var(--danger,#ef4444)">${esc(ordersErr)}</div>`:""}
+    <div class="ordlist">${list}</div>`;
+}
+function wireOrders(){
+  const cb=$("#ordConnectBtn");
+  if(cb) cb.onclick=()=>{ const e=$("#ordEmail").value, p=$("#ordPass").value; if(!e||!p){ordersErr="Enter your drlinks email and password";renderManager();return;} cb.textContent="Connecting…"; cb.disabled=true; ordersConnect(e,p); };
+  const rf=$("#ordRefresh"); if(rf) rf.onclick=()=>loadOrders();
+  const dc=$("#ordDisc"); if(dc) dc.onclick=()=>ordersDisconnect();
+  document.querySelectorAll(".ordconv").forEach(b=>b.onclick=()=>{ const o=ordersCache[+b.dataset.i]; if(o) convertOrderToTask(o); });
+}
+function convertOrderToTask(o){
+  closeManager(); openEditor(null);
+  const svc=ordField(o,["service_name","service","package","product","plan"])||"Order";
+  const num=ordField(o,["order_number","order_id","id"]);
+  const cust=ordField(o,["customer","customer_name","client_name","client_email","email","name"]);
+  $("#fTitle").value=svc+(num?(" — #"+num):"");
+  $("#fWebsite").value=String(ordField(o,["target_url","url","website","link","page_url"])||"");
+  $("#fKeywords").value=String(ordField(o,["keywords","anchor_text","anchor","keyword"])||"");
+  const noteBits=[]; if(num)noteBits.push("Order #"+num); if(cust)noteBits.push("Client: "+cust);
+  const pkg=ordField(o,["package","plan","tier"]); if(pkg)noteBits.push("Package: "+pkg);
+  const qty=ordField(o,["quantity","qty"]); if(qty)noteBits.push("Qty: "+qty);
+  const amt=ordMoney(o); if(amt)noteBits.push("Amount: "+amt);
+  const extra=ordField(o,["notes","note","requirements","details","message"]); if(extra)noteBits.push(String(extra));
+  $("#fNote").value=noteBits.join(" · ");
+  const cat=mapServiceToCategory(svc);
+  $("#fCategory").value=cat; renderAssignPills(cat,false);
+  toast("Filled from order — pick category/assignee, then Save");
+}
+
 function renderManager(){
   const body=$("#mgrBody");if(!body)return;
   const rows=team.map(n=>{const s=statsFor(n);return `<tr>
@@ -621,6 +750,7 @@ function renderManager(){
     <span class="mrow-n"><span class="avatar mini" style="background:${colorFor(m.name)}">${initials(m.name)}</span>${esc(m.name)}${m.name===MANAGER?'<span class="badge-mgr">Mgr</span>':''}</span>
     ${m.name===MANAGER?'<span class="muted-s">—</span>':`<button class="mrm" data-id="${m.id}">Remove</button>`}</div>`).join("");
   body.innerHTML=`
+    ${ordersSectionHTML()}
     <h4>Team overview</h4>
     <div class="tablewrap"><table class="mgr-table">
       <thead><tr><th>Member</th><th>To-Do</th><th>Prog</th><th>Rev</th><th>Done</th><th>Over</th><th>Total</th><th>%</th></tr></thead>
@@ -638,6 +768,7 @@ function renderManager(){
   body.querySelectorAll(".mrm").forEach(b=>b.onclick=()=>removeMember(b.dataset.id));
   const ab=$("#mgrAddBtn");if(ab)ab.onclick=addMember;
   const ni=$("#newMgrMember");if(ni)ni.addEventListener("keydown",e=>{if(e.key==="Enter")addMember();});
+  wireOrders();
 }
 
 $("#mgrBtn").onclick=openManager;
