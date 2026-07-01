@@ -1,6 +1,6 @@
 {
-  "name": "LinkTasks — Agency Task Manager",
-  "short_name": "LinkTasks",
+  "name": "Metaperch — Agency Task Manager",
+  "short_name": "Metaperch",
   "description": "Task management for link building agency teams",
   "start_url": "./index.html",
   "scope": "./",
