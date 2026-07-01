@@ -356,8 +356,15 @@
     </div>
     <div class="twocol">
       <div class="field">
-        <label>Due date</label>
-        <input type="date" id="fDue">
+        <label>Deadline</label>
+        <select id="fDue">
+          <option value="">No deadline</option>
+          <option value="1">1 Day</option>
+          <option value="2">2 Days</option>
+          <option value="3">3 Days</option>
+          <option value="4">4 Days</option>
+          <option value="5">5 Days</option>
+        </select>
       </div>
       <div class="field">
         <label>Status</label>
@@ -460,6 +467,10 @@ function toast(msg){const t=document.createElement("div");t.className="toast";t.
   document.body.appendChild(t);setTimeout(()=>t.remove(),2200);}
 function daysUntil(d){if(!d)return null;const a=new Date(d+"T00:00:00");const b=new Date();
   b.setHours(0,0,0,0);return Math.round((a-b)/86400000);}
+// Relative deadline options → an absolute YYYY-MM-DD (n days from today, local time)
+function dueFromDays(n){n=parseInt(n,10);if(!n||n<1)return null;const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+n);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+const DUE_OPTS='<option value="">No deadline</option><option value="1">1 Day</option><option value="2">2 Days</option><option value="3">3 Days</option><option value="4">4 Days</option><option value="5">5 Days</option>';
 function dueLabel(d){const n=daysUntil(d);if(n===null)return null;
   if(n<0)return{txt:`${-n}d overdue`,cls:"over"};if(n===0)return{txt:"Due today",cls:"soon"};
   if(n===1)return{txt:"Due tomorrow",cls:"soon"};if(n<=3)return{txt:`Due in ${n}d`,cls:"soon"};
@@ -1135,7 +1146,11 @@ function openEditor(task){
   // Manager/Admin always; the task's own assignee can also edit the live-report sheet link.
   canEditSheet=(me===MANAGER||me===ADMIN||(!!task && task.assignee===me));
   $("#sheetField").style.display=canEditSheet?"block":"none";
-  $("#fDue").value=task?(task.due||""):"";
+  const dueSel=$("#fDue"); dueSel.innerHTML=DUE_OPTS;
+  if(task&&task.due){ const dd=daysUntil(task.due);
+    if(dd!==null&&dd>=1&&dd<=5){ dueSel.value=String(dd); }
+    else { const o=document.createElement("option"); o.value=task.due; o.textContent="Keep "+(((dueLabel(task.due)||{}).txt)||task.due); dueSel.insertBefore(o,dueSel.children[1]); dueSel.value=task.due; } }
+  else { dueSel.value=""; }
   $("#fStatus").value=task?task.status:"todo";
   pickedPrio=task?task.priority:"med";
   pickedAssignee=task?(task.assignee||""):"";
@@ -1167,7 +1182,9 @@ $("#saveBtn").onclick=()=>{
   if(!t){t={id:uid(),created_at:new Date().toISOString()};tasks.unshift(t);}
   t.title=title;t.website=$("#fWebsite").value.trim();t.keywords=$("#fKeywords").value.trim();t.note=$("#fNote").value.trim();t.category=newCategory;t.assignee=pickedAssignee;
   if(canEditSheet) t.sheet=$("#fSheet").value.trim(); // manager/admin or the task's assignee set the live-report sheet
-  t.priority=pickedPrio;t.due=$("#fDue").value||null;t.status=newStatus;
+  t.priority=pickedPrio;
+  const dv=$("#fDue").value; t.due=/^\d{4}-\d{2}-\d{2}$/.test(dv)?dv:(/^[1-5]$/.test(dv)?dueFromDays(dv):null);
+  t.status=newStatus;
   persist(t,"update");closeSheet();render();toast(editingId?"Task updated":"Task created");
 };
 $("#deleteBtn").onclick=()=>{
