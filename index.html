@@ -212,6 +212,13 @@
   .ordall{margin-top:6px;display:flex;flex-direction:column;gap:3px;max-height:180px;overflow:auto;word-break:break-all;color:var(--muted)}
   .btn.small{padding:6px 10px;font-size:12.5px;margin-top:10px}
   .ordconv{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4);color:#86efac}
+  .tag.ordtag{background:rgba(168,85,247,.18);color:#d8b4fe;border:1px solid rgba(168,85,247,.4)}
+  .apprv{margin-top:8px;font-size:12.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .apprv.pend{color:#fbbf24}
+  .apprv.done2{color:#22c55e;font-weight:600}
+  .apprv.hint2{color:var(--muted);font-style:italic}
+  .apprv .submitBtn{background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.45);color:#93c5fd}
+  .apprv .apprvBtn{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.5);color:#86efac}
   .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
   .mgr-table{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
   .mgr-table th{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:9px 6px;border-bottom:1px solid var(--border)}
@@ -441,7 +448,7 @@ let filterAssignee="all";
 let view="board";
 let editingId=null;
 let canEditSheet=false;
-let lastStatus={}, statusInit=false;
+let lastStatus={}, lastApproval={}, statusInit=false;
 let meUser=""; // current user's login username (for self-assign eligibility)
 
 /* ---------- helpers ---------- */
@@ -529,9 +536,9 @@ $("#loginBtn").onclick=doLogin;
 $("#loginPass").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
 $("#loginUser").addEventListener("keydown",e=>{if(e.key==="Enter")$("#loginPass").focus();});
 function fromRow(r){return{id:r.id,title:r.title,website:r.website_url,keywords:r.keywords,note:r.note,category:r.category,sheet:r.sheet_url,assignee:r.assignee,
-  priority:r.priority,due:r.due_date,status:r.status,created_at:r.created_at};}
+  priority:r.priority,due:r.due_date,status:r.status,order_ref:r.order_ref||null,approval:r.approval||null,created_at:r.created_at};}
 function toRow(t){return{id:t.id,title:t.title,website_url:t.website||null,keywords:t.keywords||null,note:t.note||null,category:t.category||null,sheet_url:t.sheet||null,assignee:t.assignee||null,
-  priority:t.priority,due_date:t.due||null,status:t.status};}
+  priority:t.priority,due_date:t.due||null,status:t.status,order_ref:t.order_ref||null,approval:t.approval||null};}
 
 async function persist(task,action){
   if(cloud){
@@ -652,6 +659,7 @@ async function loadOrders(){
     const {data,error}=await ordersClient().from("orders").select("*").order("created_at",{ascending:false});
     if(error){ ordersErr=error.message; } else { ordersCache=data||[]; ordersErr=""; }
   }catch(e){ ordersErr=String(e&&e.message||e); }
+  try{ await autoImportOrders(); }catch(e){}
   if(managerOpen) renderManager();
 }
 function startOrdersLive(){
@@ -731,6 +739,73 @@ function convertOrderToTask(o){
   const cat=mapServiceToCategory(svc);
   $("#fCategory").value=cat; renderAssignPills(cat,false);
   toast("Filled from order — pick category/assignee, then Save");
+}
+
+/* ---------- Order → Task automation + approval/delivery ---------- */
+const ORDER_COMPLETE_STATUS = "completed"; // value written to the drlinks order on approval
+function orderIsClosed(o){ const s=String(ordField(o,["status","order_status","payment_status"])||"").toLowerCase();
+  return ["completed","complete","delivered","cancelled","canceled","refunded","closed"].includes(s) || !!o.report_url; }
+// Auto-create a task assigned to the Manager for every new order (dedup by order_ref).
+async function autoImportOrders(){
+  if(me!==ADMIN || !ordersConnected) return;
+  let created=0;
+  for(const o of ordersCache){
+    const ref=String(o.id);
+    if(tasks.some(t=>String(t.order_ref)===ref)) continue; // already imported
+    if(orderIsClosed(o)) continue; // skip finished/cancelled orders
+    const svc=ordField(o,["service_name","service","package","product","plan"])||"Order";
+    const num=ordField(o,["order_number","order_id","id"]);
+    const cust=ordField(o,["customer","customer_name","client_name","client_email","email","name"]);
+    const bits=[]; if(num)bits.push("Order #"+num); if(cust)bits.push("Client: "+cust);
+    const pkg=ordField(o,["package","plan","tier"]); if(pkg)bits.push("Package: "+pkg);
+    const qty=ordField(o,["quantity","qty"]); if(qty)bits.push("Qty: "+qty);
+    const amt=ordMoney(o); if(amt)bits.push("Amount: "+amt);
+    const extra=ordField(o,["notes","note","requirements","details","message"]); if(extra)bits.push(String(extra));
+    const t={ id:uid(), created_at:new Date().toISOString(),
+      title:svc+(num?(" — #"+num):""), website:String(ordField(o,["target_url","url","website","link","page_url"])||""),
+      keywords:String(ordField(o,["keywords","anchor_text","anchor","keyword"])||""), note:bits.join(" · "),
+      category:mapServiceToCategory(svc), assignee:MANAGER, priority:"med", due:null, status:"todo",
+      order_ref:ref, approval:null };
+    tasks.unshift(t); await persist(t,"update"); created++;
+  }
+  if(created){ render(); toast("📦 "+created+" new order"+(created>1?"s":"")+" → assigned to "+MANAGER); }
+}
+function orderApprovalHTML(t){
+  if(!t.order_ref) return "";
+  if(t.approval==="approved") return `<div class="apprv done2">✅ Delivered to client · order complete</div>`;
+  const elevated=(me===MANAGER||me===ADMIN);
+  if(t.approval==="pending"){
+    return `<div class="apprv pend">⏳ Awaiting admin approval${me===ADMIN?` <button class="btn small apprvBtn">✅ Approve &amp; Deliver</button>`:""}</div>`;
+  }
+  if(elevated){
+    return t.sheet
+      ? `<div class="apprv"><button class="btn small submitBtn">📤 Submit report for approval</button></div>`
+      : `<div class="apprv hint2">Attach the 📊 delivery spreadsheet (edit ✏️), then submit for approval.</div>`;
+  }
+  return "";
+}
+function submitForApproval(t){
+  if(!(me===MANAGER||me===ADMIN)) return;
+  if(!t.sheet){ toast("Attach the delivery spreadsheet first"); return; }
+  t.approval="pending"; persist(t,"update"); render();
+  toast("📤 Submitted — waiting for admin approval");
+}
+// Google Sheet URL -> direct Excel (xlsx) download URL, so the client can download in Excel.
+function toXlsxUrl(u){ u=String(u||"").trim();
+  const m=u.match(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
+  if(m) return "https://docs.google.com/spreadsheets/d/"+m[1]+"/export?format=xlsx";
+  return u;
+}
+async function approveDeliver(t){
+  if(me!==ADMIN){ toast("Only the Admin can approve"); return; }
+  if(!ordersConnected){ toast("Open ⚙ Admin → connect drlinks first"); return; }
+  if(!t.sheet){ toast("No delivery report attached"); return; }
+  const upd={ report_url: toXlsxUrl(t.sheet), report_delivered_at:new Date().toISOString(), status: ORDER_COMPLETE_STATUS };
+  const {error}=await ordersClient().from("orders").update(upd).eq("id", t.order_ref);
+  if(error){ toast("Deliver failed: "+error.message); return; }
+  t.approval="approved"; t.status="done"; persist(t,"update"); render();
+  toast("✅ Delivered to client & order marked complete");
+  await loadOrders();
 }
 
 function renderManager(){
@@ -958,7 +1033,14 @@ function checkTransitions(){
         if(me===MANAGER||me===ADMIN) notify("✅ Task Done", "'"+t.title+"' marked Done — "+t.assignee);
       }
     }
+    // order approval transitions
+    const pa=lastApproval[t.id];
+    if(statusInit && pa!==undefined && pa!==t.approval){
+      if(t.approval==="pending" && me===ADMIN) notify("📤 Order needs approval", "'"+t.title+"' — report submitted, awaiting your approval");
+      if(t.approval==="approved" && me===MANAGER) notify("✅ Order approved", "'"+t.title+"' approved & delivered to client");
+    }
     lastStatus[t.id]=t.status;
+    lastApproval[t.id]=t.approval;
   });
   statusInit=true;
 }
@@ -1001,6 +1083,7 @@ function taskCard(t){
     ${t.keywords?`<p class="tkw">🔑 ${esc(t.keywords)}</p>`:""}
     ${t.note?`<p class="desc">${esc(t.note)}</p>`:""}
     <div class="meta">
+      ${t.order_ref?`<span class="tag ordtag">📦 Order</span>`:""}
       ${t.category?`<span class="tag cat" style="color:${catColor(t.category)};border:1px solid ${catColor(t.category)}66;background:${catColor(t.category)}1a">${esc(t.category)}</span>`:""}
       ${t.assignee?`<span class="tag assignee"><span class="avatar" style="width:18px;height:18px;font-size:10px;background:${colorFor(t.assignee)}">${initials(t.assignee)}</span>${esc(t.assignee)}</span>`:`<span class="tag unassigned">Unassigned</span>`}
       <span class="tag ${pm[0]}">${pm[1]}</span>
@@ -1014,7 +1097,10 @@ function taskCard(t){
       </div>
       ${canClaim(t)?`<button class="claimBtn">＋ Claim</button>`:""}
       <button class="iconbtn editBtn">✏️</button>
-    </div>`;
+    </div>
+    ${orderApprovalHTML(t)}`;
+  const sbtn=c.querySelector(".submitBtn"); if(sbtn) sbtn.onclick=()=>submitForApproval(t);
+  const abtn=c.querySelector(".apprvBtn"); if(abtn) abtn.onclick=()=>approveDeliver(t);
   const cb=c.querySelector(".claimBtn"); if(cb) cb.onclick=()=>claimTask(t);
   c.querySelectorAll(".statusbtns button").forEach(b=>{
     b.onclick=()=>{ const ns=b.dataset.s;
