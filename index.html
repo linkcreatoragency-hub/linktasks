@@ -726,14 +726,12 @@ function convertOrderToTask(o){
   closeManager(); openEditor(null);
   const svc=ordField(o,["service_name","service","package","product","plan"])||"Order";
   const num=ordField(o,["order_number","order_id","id"]);
-  const cust=ordField(o,["customer","customer_name","client_name","client_email","email","name"]);
   $("#fTitle").value=svc+(num?(" — #"+num):"");
   $("#fWebsite").value=String(ordField(o,["target_url","url","website","link","page_url"])||"");
   $("#fKeywords").value=String(ordField(o,["keywords","anchor_text","anchor","keyword"])||"");
-  const noteBits=[]; if(num)noteBits.push("Order #"+num); if(cust)noteBits.push("Client: "+cust);
+  const noteBits=[]; if(num)noteBits.push("Order #"+num); // customer + amount hidden from Manager/team
   const pkg=ordField(o,["package","plan","tier"]); if(pkg)noteBits.push("Package: "+pkg);
   const qty=ordField(o,["quantity","qty"]); if(qty)noteBits.push("Qty: "+qty);
-  const amt=ordMoney(o); if(amt)noteBits.push("Amount: "+amt);
   const extra=ordField(o,["notes","note","requirements","details","message"]); if(extra)noteBits.push(String(extra));
   $("#fNote").value=noteBits.join(" · ");
   const cat=mapServiceToCategory(svc);
@@ -755,11 +753,10 @@ async function autoImportOrders(){
     if(orderIsClosed(o)) continue; // skip finished/cancelled orders
     const svc=ordField(o,["service_name","service","package","product","plan"])||"Order";
     const num=ordField(o,["order_number","order_id","id"]);
-    const cust=ordField(o,["customer","customer_name","client_name","client_email","email","name"]);
-    const bits=[]; if(num)bits.push("Order #"+num); if(cust)bits.push("Client: "+cust);
+    // Customer + amount are intentionally NOT put on the task — hidden from Manager/team. Admin sees them in the Orders panel.
+    const bits=[]; if(num)bits.push("Order #"+num);
     const pkg=ordField(o,["package","plan","tier"]); if(pkg)bits.push("Package: "+pkg);
     const qty=ordField(o,["quantity","qty"]); if(qty)bits.push("Qty: "+qty);
-    const amt=ordMoney(o); if(amt)bits.push("Amount: "+amt);
     const extra=ordField(o,["notes","note","requirements","details","message"]); if(extra)bits.push(String(extra));
     const t={ id:uid(), created_at:new Date().toISOString(),
       title:svc+(num?(" — #"+num):""), website:String(ordField(o,["target_url","url","website","link","page_url"])||""),
